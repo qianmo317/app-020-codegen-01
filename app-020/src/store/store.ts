@@ -6,17 +6,30 @@ import type {
   Facility,
   FacilityKind,
   Floor,
+  Inspector,
   Pt,
+  QuarterPlan,
   Room,
   RoomUsage,
   RuleSet,
+  ScheduleBatch,
   ValidationResult,
 } from '../model';
 import { DEFAULT_RULES } from '../rules/defaults';
 import { nextCode, uid } from './id';
 import { polyAreaM2 } from '../lib/geometry';
+import { batchProgress, carryOverBatch, generateBatches } from '../lib/schedule';
 
 const STORAGE_KEY = 'fem.v1';
+
+export type PlanSettings = {
+  /** 每人每天可查设施件数上限 */
+  cap: number;
+  /** 法定节假日（YYYY-MM-DD），周末默认休息 */
+  holidays: string[];
+};
+
+const DEFAULT_SETTINGS: PlanSettings = { cap: 30, holidays: [] };
 
 export type AppState = {
   buildings: Building[];
@@ -24,27 +37,49 @@ export type AppState = {
   rules: Record<BuildingKind, RuleSet>;
   /** 「您在此」标记（打印版疏散图），按楼层存 */
   marks: Record<string, Pt>;
+  /** 季度检查派工：巡检员、派工设置、按季度存的计划 */
+  inspectors: Inspector[];
+  planSettings: PlanSettings;
+  plans: Record<string, QuarterPlan>;
 };
+
+function defaultInspectors(): Inspector[] {
+  return [
+    { id: uid(), name: '巡检员甲', active: true },
+    { id: uid(), name: '巡检员乙', active: true },
+  ];
+}
 
 function loadState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const s = JSON.parse(raw) as Partial<AppState>;
-      // 缺失的节用默认值补齐（如旧版本数据没有 rules/marks），而不是整体丢弃用户数据
+      // 缺失的节用默认值补齐（如旧版本数据没有 rules/marks/计划），而不是整体丢弃用户数据
       if (s && Array.isArray(s.buildings) && s.floors) {
         return {
           buildings: s.buildings,
           floors: s.floors,
           rules: { ...structuredClone(DEFAULT_RULES), ...(s.rules ?? {}) },
           marks: s.marks ?? {},
+          inspectors: Array.isArray(s.inspectors) ? s.inspectors : defaultInspectors(),
+          planSettings: { ...DEFAULT_SETTINGS, ...(s.planSettings ?? {}) },
+          plans: s.plans ?? {},
         };
       }
     }
   } catch {
     /* 损坏则重新开始 */
   }
-  return { buildings: [], floors: {}, rules: structuredClone(DEFAULT_RULES), marks: {} };
+  return {
+    buildings: [],
+    floors: {},
+    rules: structuredClone(DEFAULT_RULES),
+    marks: {},
+    inspectors: defaultInspectors(),
+    planSettings: { ...DEFAULT_SETTINGS },
+    plans: {},
+  };
 }
 
 let state: AppState = loadState();
@@ -64,12 +99,15 @@ function persist() {
 
 function setState(patch: (s: AppState) => void) {
   patch(state);
-  // 浅拷贝各容器：保证 s.buildings / s.floors / s.rules / s.marks 选择器拿到新引用
+  // 浅拷贝各容器：保证各选择器拿到新引用
   state = {
     buildings: [...state.buildings],
     floors: { ...state.floors },
     rules: { ...state.rules },
     marks: { ...state.marks },
+    inspectors: [...state.inspectors],
+    planSettings: { ...state.planSettings, holidays: [...state.planSettings.holidays] },
+    plans: { ...state.plans },
   };
   persist();
   listeners.forEach((l) => l());
@@ -297,6 +335,132 @@ export function resetRules(kind: BuildingKind) {
     s.rules[kind] = structuredClone(DEFAULT_RULES[kind]);
   });
   persist();
+}
+
+// ---------- 季度检查派工计划 ----------
+
+export function addInspector(name: string): string {
+  const id = uid();
+  setState((s) => s.inspectors.push({ id, name, active: true }));
+  return id;
+}
+
+export function updateInspector(id: string, patch: Partial<Pick<Inspector, 'name' | 'active'>>) {
+  setState((s) => {
+    const i = s.inspectors.findIndex((x) => x.id === id);
+    if (i >= 0) s.inspectors[i] = { ...s.inspectors[i], ...patch };
+  });
+}
+
+export function deleteInspector(id: string) {
+  setState((s) => {
+    s.inspectors = s.inspectors.filter((x) => x.id !== id);
+    // 已派给该巡检员的批次解除指派（不删批，便于重新指派）
+    for (const [q, plan] of Object.entries(s.plans)) {
+      let changed = false;
+      for (const b of plan.batches) {
+        if (b.inspectorId === id) {
+          b.inspectorId = null;
+          changed = true;
+        }
+      }
+      if (changed) s.plans[q] = { ...plan, batches: [...plan.batches] };
+    }
+  });
+}
+
+export function updatePlanSettings(patch: Partial<PlanSettings>) {
+  setState((s) => {
+    s.planSettings = { ...s.planSettings, ...patch };
+  });
+}
+
+/** 删除某季度的派工计划（重新排产前彻底重来） */
+export function deletePlan(quarter: string) {
+  setState((s) => {
+    delete s.plans[quarter];
+  });
+}
+
+/**
+ * 生成（或重新生成）某季度派工批次。
+ * 已查完的批、以及一键顺延后留痕的原批保留；其覆盖的「楼层×月份」不再重排。
+ * 未完成的批（含未完成的顺延承接批）丢弃重排，避免过期/重复派工。
+ */
+export function generatePlan(quarter: string): number {
+  let count = 0;
+  setState((s) => {
+    const old = s.plans[quarter]?.batches ?? [];
+    const retained = old.filter((b) => b.carried || batchProgress(b, s.floors).completed);
+    // 按楼层汇总保留批覆盖的应检月份（真实应检月 + 计划月都收：逾期补检批的应检月在季前，
+    // 归组时按真实应检月跳过；计划月保证同季的月检续批不回填）
+    const skipMonths = new Map<string, Set<string>>();
+    for (const b of retained) {
+      let set = skipMonths.get(b.floorId);
+      if (!set) {
+        set = new Set();
+        skipMonths.set(b.floorId, set);
+      }
+      set.add(b.dueDate.slice(0, 7));
+      set.add(b.monthKey);
+    }
+    const fresh = generateBatches({
+      quarter,
+      buildings: s.buildings,
+      floors: s.floors,
+      inspectors: s.inspectors,
+      cap: s.planSettings.cap,
+      holidays: s.planSettings.holidays,
+      skipMonths,
+    });
+    const batches = [...retained, ...fresh].sort((a, b) =>
+      a.date.localeCompare(b.date) || a.buildingName.localeCompare(b.buildingName, 'zh-Hans-CN') || a.level - b.level,
+    );
+    s.plans[quarter] = { quarter, batches, generatedAt: new Date().toISOString() };
+    count = batches.length;
+  });
+  return count;
+}
+
+/** 手动改派工日 / 巡检员 / 携带物 */
+export function updateBatch(quarter: string, batchId: string, patch: Partial<Pick<ScheduleBatch, 'date' | 'inspectorId' | 'tools'>>) {
+  setState((s) => {
+    const plan = s.plans[quarter];
+    if (!plan) return;
+    const i = plan.batches.findIndex((b) => b.id === batchId);
+    if (i < 0) return;
+    s.plans[quarter] = { ...plan, batches: plan.batches.map((b) => (b.id === batchId ? { ...b, ...patch } : b)) };
+  });
+}
+
+export function deleteBatch(quarter: string, batchId: string) {
+  setState((s) => {
+    const plan = s.plans[quarter];
+    if (!plan) return;
+    s.plans[quarter] = { ...plan, batches: plan.batches.filter((b) => b.id !== batchId) };
+  });
+}
+
+/** 一键顺延：未查完的设施挪到下一工作日的承接批；原批部分已查则留痕划掉，全未查则直接替换 */
+export function carryBatch(quarter: string, batchId: string) {
+  setState((s) => {
+    const plan = s.plans[quarter];
+    if (!plan) return;
+    const idx = plan.batches.findIndex((b) => b.id === batchId);
+    if (idx < 0) return;
+    const batch = plan.batches[idx];
+    const moved = carryOverBatch(batch, s.floors, s.planSettings.holidays);
+    if (!moved) return;
+    const prog = batchProgress(batch, s.floors);
+    const batches = [...plan.batches];
+    if (prog.done > 0) {
+      batches[idx] = { ...batch, carried: true };
+      batches.push(moved);
+    } else {
+      batches[idx] = moved;
+    }
+    s.plans[quarter] = { ...plan, batches };
+  });
 }
 
 // ---------- 示例数据 ----------

@@ -145,3 +145,47 @@ export const USAGE_LABELS: Record<RoomUsage, string> = {
   corridor: '走道',
   other: '其他',
 };
+
+// ---------- 季度检查派工计划 ----------
+
+export type Inspector = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+/**
+ * 一批检查 = 「某楼栋某楼层在某月应检的全部设施」。
+ * 同一楼层的设施绝不拆到两批里；月检类（灭火器/消火栓）季内最多可产生 3 批（按月）。
+ */
+export type ScheduleBatch = {
+  id: string;
+  buildingId: string;
+  buildingName: string; // 快照，生成时的楼栋名
+  floorId: string;
+  level: number; // 楼层（用于排序）
+  /** YYYY-MM，这批对应的应检月份（同月同楼层才会合批） */
+  monthKey: string;
+  facilityIds: string[];
+  /** 计划依据的应检日（该批中最早的下次应检日），可能是季度以前（季初补检） */
+  dueDate: string;
+  /** 实际派工日（工作日），可能晚于 dueDate —— 见 postponeReason */
+  date: string;
+  inspectorId: string | null;
+  tools: string[]; // 该批要带的工具（按本批设施类型汇总）
+  /** 顺延说明：date 晚于 dueDate 时写清原因（周末/节假日、人均日上限、无可用巡检员） */
+  postponeReason?: string;
+  /** 超上限警告：同楼层整批数量超过单人单日上限，不能拆批只能整批压给一人 */
+  overCap?: boolean;
+  generatedAt: string;
+  /** 一键顺延产生的承接批（新批，带未检设施） */
+  carryover?: boolean;
+  /** 被一键顺延的原批留痕（有设施已查、不能整删，置此位从派工中划掉） */
+  carried?: boolean;
+};
+
+export type QuarterPlan = {
+  quarter: string; // YYYY-Qn
+  batches: ScheduleBatch[];
+  generatedAt: string;
+};

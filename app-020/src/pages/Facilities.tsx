@@ -101,6 +101,7 @@ export function FacilitiesPage() {
           只看待整改（过期/缺失/损坏）
         </label>
         <button onClick={exportCsv}>导出台账 CSV</button>
+        <Link className="btn" to="/schedule">季度派工计划</Link>
         <Link className="btn" to="/rules">规则配置</Link>
       </div>
       <table className="table">

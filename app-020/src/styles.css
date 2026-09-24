@@ -172,3 +172,42 @@ input, select {
   .print-sheet { border: none; margin: 0; width: 100% !important; max-width: none !important; page-break-after: always; }
   @page { size: A4 landscape; margin: 8mm; }
 }
+
+/* ---------- 季度派工计划 ---------- */
+.sched-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 10px; }
+.sched-block h4 { margin: 8px 0 6px; font-size: 13px; color: var(--muted); }
+.holiday-input { width: 100%; font: inherit; padding: 6px 8px; border: 1px solid #c8d0d8; border-radius: 6px; resize: vertical; }
+.ov-building { margin: 10px 0; }
+.ov-building h4 { margin: 8px 0 4px; }
+.ov-detail { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 2px; }
+.ov-detail .fac-chip em { font-style: normal; margin-left: 6px; }
+
+.fac-chip {
+  background: #f2f5f9; border: 1px solid #e0e6ee; border-radius: 14px;
+  padding: 2px 10px; font-size: 12px; white-space: nowrap;
+}
+.tag-green { background: #e5f3e6 !important; color: var(--green) !important; }
+.tag-red { background: #fdecec !important; color: var(--red) !important; }
+.tag-amber { background: #fff6e0 !important; color: #b26a00 !important; }
+.tag-muted { background: #eee !important; color: var(--muted) !important; }
+
+.schedule-groups { margin-top: 8px; }
+.schedule-day h3, .schedule-person h3 { margin: 14px 0 8px; font-size: 15px; }
+.batch-grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+.batch-card {
+  background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
+}
+.batch-card.is-done { border-left-color: var(--green); background: #f7faf7; opacity: 0.72; }
+.batch-card.is-done .batch-head b { text-decoration: line-through; }
+.batch-card.is-overcap { border-left-color: var(--red); }
+.batch-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+.batch-head .tag { margin-left: 4px; }
+.batch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+.batch-facs { display: flex; flex-wrap: wrap; gap: 4px; }
+.batch-foot { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.postpone-reason { color: #b26a00; font-size: 12px; margin: 2px 0; }
+.row-done { opacity: 0.6; }
+.row-done td:nth-child(2) { text-decoration: line-through; }
+.tools-cell { font-size: 12px; color: #555; max-width: 220px; }
+.schedule-page .cardactions { display: inline-flex; gap: 6px; }
