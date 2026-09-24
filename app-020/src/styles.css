@@ -150,6 +150,41 @@ input, select {
 .ruletabs { display: flex; gap: 6px; margin: 12px 0; }
 .ruleform { max-width: 560px; }
 
+/* 季度计划页 */
+.plan-page h3 { margin: 4px 0 8px; font-size: 15px; }
+.muted { color: var(--muted); }
+.inspector-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 6px 2px 10px;
+  background: #fafbfc; font-size: 13px;
+}
+.chip.on { border-color: var(--blue); background: #eef5fd; }
+.chip button { padding: 0 7px; border: none; }
+.chip input[type='text'], .chip input:not([type]) { border: none; background: transparent; padding: 2px; }
+
+.batchgroup { margin: 12px 0; }
+.batchgroup-head {
+  font-weight: 600; padding: 6px 10px; background: #f2f5f9;
+  border-radius: 8px 8px 0 0; border: 1px solid var(--line); border-bottom: none;
+}
+.batchcard {
+  border: 1px solid var(--line); border-top: 1px dashed var(--line);
+  padding: 8px 12px; background: #fff;
+}
+.batchgroup .batchcard:last-child { border-radius: 0 0 8px 8px; }
+.batchcard.done { background: #f6faf6; opacity: 0.72; }
+.batchcard.overdue { border-left: 3px solid var(--red); }
+.batchcard-head { display: flex; align-items: center; gap: 10px; cursor: pointer; flex-wrap: wrap; }
+.batchtitle { font-weight: 600; min-width: 90px; }
+.batchfloors { flex: 1; min-width: 160px; }
+.batchmeta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.batchnote { color: #b26a00; font-size: 12px; margin-top: 4px; }
+.batchdetail { margin-top: 8px; }
+.row-done td { color: var(--muted); text-decoration: line-through; }
+.batchcard .table { font-size: 12px; }
+
+
 /* ---------- 打印页 ---------- */
 .printpage { background: #e9ebee; min-height: 100%; }
 .print-sheet {

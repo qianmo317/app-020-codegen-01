@@ -145,3 +145,43 @@ export const USAGE_LABELS: Record<RoomUsage, string> = {
   corridor: '走道',
   other: '其他',
 };
+
+// ---------- 季度检查计划 ----------
+
+/** 计划项（一个设施在本季度的一次应检） */
+export type PlanItem = {
+  facilityId: string;
+  kind: FacilityKind;
+  code: string;
+  floorId: string;
+  buildingId: string;
+  /** 本季度该设施的应检日期（按月度设施在季内首次到期） */
+  dueDate: string; // YYYY-MM-DD
+  /** 排程时所依据的最近一次检查日期；无记录为 null（排程后新补的旧检查不影响既有批次） */
+  basedOnCheck: string | null;
+};
+
+/** 一批 = 一名检查人 × 一个工作日 × 若干个同层楼层单元 */
+export type PlanBatch = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  inspectorId: string;
+  floorIds: string[];
+  items: PlanItem[];
+  /** 顺延说明：从原应检日顺延至 date 的原因（容量超限/周末节假日），未顺延为 null */
+  postponement: string | null;
+  /** 批次曾被「一键顺延」（从更早的批次日期挪过来） */
+  carriedOver?: boolean;
+};
+
+export type QuarterPlan = {
+  id: string; // `${year}-Q${quarter}`
+  year: number;
+  quarter: number; // 1~4
+  createdAt: string;
+  /** 派工参数（生成时快照，重排才会变） */
+  inspectorIds: string[];
+  dailyCap: number;
+  holidays: string[]; // YYYY-MM-DD
+  batches: PlanBatch[];
+};
